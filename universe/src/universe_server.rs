@@ -1,7 +1,9 @@
 use aw_core::*;
+use rand::Rng;
 
+use crate::system;
 use crate::{
-    client::{Client, ClientManager},
+    client::{Client, ClientID, ClientManager, Heartbeat},
     config,
     database::Database,
     packet_handler,
@@ -12,9 +14,10 @@ use std::net::{SocketAddrV4, TcpListener};
 pub struct UniverseServer {
     config: config::UniverseConfig,
     license_generator: LicenseGenerator,
-    client_manager: ClientManager,
+    pub client_manager: ClientManager,
     database: Database,
     listener: TcpListener,
+    pub universe: hecs::World,
 }
 
 impl UniverseServer {
@@ -30,6 +33,7 @@ impl UniverseServer {
             client_manager: Default::default(),
             database,
             listener,
+            universe: hecs::World::new(),
         })
     }
 
@@ -43,14 +47,18 @@ impl UniverseServer {
             self.accept_new_clients();
             self.service_clients();
             self.client_manager.remove_dead_clients(&self.database);
-            self.client_manager.send_heartbeats();
+            system::send_heartbeats(self);
         }
     }
 
     fn accept_new_clients(&mut self) {
         while let Ok((stream, addr)) = self.listener.accept() {
-            let client = Client::new(AWConnection::new(AWProtocol::new(stream)), addr);
+            // TODO: generate IDs that can't collide
+            let id = ClientID(rand::thread_rng().gen_range(0..=usize::MAX));
+            let client = Client::new(AWConnection::new(AWProtocol::new(stream)), addr, id);
             self.client_manager.add_client(client);
+
+            self.universe.spawn((id, Heartbeat { last_time: 0 }));
         }
     }
 

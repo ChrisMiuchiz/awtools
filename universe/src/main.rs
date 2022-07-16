@@ -11,6 +11,7 @@ pub mod config;
 mod database;
 pub mod packet_handler;
 pub mod player;
+pub mod system;
 pub mod world;
 
 use env_logger::Builder;

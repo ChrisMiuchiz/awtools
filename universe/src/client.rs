@@ -12,7 +12,7 @@ use crate::{
     packet_handler::{self, update_contacts_of_user},
     player::{PlayerInfo, PlayerState},
     world::{World, WorldServerInfo},
-    AWConnection, AWCryptRSA,
+    AWConnection, AWCryptRSA, UniverseServer,
 };
 use aw_core::{AWPacket, PacketType, ReasonCode};
 use num_derive::FromPrimitive;
@@ -40,29 +40,32 @@ impl Entity {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub struct ClientID(pub usize);
+
+#[derive(Debug)]
+pub struct Heartbeat {
+    pub last_time: u64,
+}
+
 pub struct Client {
     pub connection: AWConnection,
     pub dead: RefCell<bool>,
     pub rsa: AWCryptRSA,
     user_info: RefCell<UserInfo>,
     pub addr: SocketAddr,
-    pub last_heartbeat: u64,
+    id: ClientID,
 }
 
 impl Client {
-    pub fn new(connection: AWConnection, addr: SocketAddr) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Current time is before the unix epoch.")
-            .as_secs();
-
+    pub fn new(connection: AWConnection, addr: SocketAddr, id: ClientID) -> Self {
         Self {
             connection,
             dead: RefCell::new(false),
             rsa: AWCryptRSA::new(),
             user_info: RefCell::new(Default::default()),
             addr,
-            last_heartbeat: now,
+            id,
         }
     }
 
@@ -102,6 +105,7 @@ pub enum ClientType {
 
 #[derive(Default)]
 pub struct ClientManager {
+    // This should probably become a HashMap after the reliance on it being a Vec is removed
     clients: Vec<Client>,
 }
 
@@ -134,6 +138,15 @@ impl ClientManager {
                 if info.citizen_id == Some(citizen_id) {
                     return Some(client);
                 }
+            }
+        }
+        None
+    }
+
+    pub fn get(&self, client_id: ClientID) -> Option<&Client> {
+        for client in &self.clients {
+            if client.id == client_id {
+                return Some(client);
             }
         }
         None
@@ -260,25 +273,6 @@ impl ClientManager {
         }
 
         Ok(login_citizen)
-    }
-
-    pub fn send_heartbeats(&mut self) {
-        for client in &mut self.clients {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Current time is before the unix epoch.")
-                .as_secs();
-
-            // 30 seconds between each heartbeat
-            let next_heartbeat = client.last_heartbeat + 30;
-
-            if next_heartbeat <= now {
-                log::info!("Sending heartbeat to {}", client.addr.ip());
-                let packet = AWPacket::new(PacketType::Heartbeat);
-                client.connection.send(packet);
-                client.last_heartbeat = now;
-            }
-        }
     }
 
     pub fn get_world_by_name(&self, name: &str) -> Option<World> {
