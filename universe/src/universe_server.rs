@@ -15,7 +15,7 @@ pub struct UniverseServer {
     config: config::UniverseConfig,
     license_generator: LicenseGenerator,
     pub client_manager: ClientManager,
-    database: Database,
+    pub database: Database,
     listener: TcpListener,
     pub universe: hecs::World,
 }
@@ -46,8 +46,8 @@ impl UniverseServer {
         loop {
             self.accept_new_clients();
             self.service_clients();
-            self.client_manager.remove_dead_clients(&self.database);
             system::send_heartbeats(self);
+            system::purge_dead_clients(self);
         }
     }
 
